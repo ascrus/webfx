@@ -74,7 +74,7 @@ stop after the specified timeout time, then the server will be stopped forcibly 
 In file engine.conf, uncomment the required properties into https and http sections.
 
 ## Screenshots
-![Open site from favorites](https://github.com/ascrus/webfx/blob/master/screenshots/screen1.png?raw=true)
+![Open site from favorites](../master/screenshots/screen1.png)
 
 ![Starting a local web server](https://github.com/ascrus/webfx/blob/master/screen2.png?raw=true)
 

@@ -1,0 +1,33 @@
+/*
+//file:noinspection GroovyAssignabilityCheck
+//file:noinspection GrUnresolvedAccess
+*/
+
+plugins {
+    id 'groovy'
+    id 'java-library'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.0.10'
+    id 'idea'
+}
+
+javafx {
+	version = '11.0.2'
+	modules = ['javafx.controls', 'javafx.fxml', 'javafx.web']
+}
+
+application {
+    mainClassName = 'ru.easydata.webfx.app.WebFxApplication'
+}
+
+group 'ru.easydata'
+version "$webfx_version"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("net.sourceforge.getl:getl:$getl_version")
+    testImplementation 'junit:junit:4.13.2'
+}

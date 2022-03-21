@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Copyright (c) 2015, 2019, Gluon and/or its affiliates.
+  All rights reserved. Use is subject to license terms.
+
+  This file is available and licensed under the following license:
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions
+  are met:
+
+  - Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+  - Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the distribution.
+  - Neither the name of Oracle Corporation nor the names of its
+    contributors may be used to endorse or promote products derived
+    from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+<?import javafx.scene.control.Menu?>
+<?import javafx.scene.control.MenuBar?>
+<?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.control.SeparatorMenuItem?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.input.KeyCodeCombination?>
+<?import javafx.scene.layout.VBox?>
+
+<!--suppress JavaFxDefaultTag -->
+<VBox maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="480.0" prefWidth="640.0" xmlns="http://javafx.com/javafx/11" xmlns:fx="http://javafx.com/fxml/1">
+  <children>
+    <MenuBar VBox.vgrow="NEVER">
+      <menus>
+        <Menu mnemonicParsing="false" text="File">
+          <items>
+            <MenuItem fx:id="menuOpenSite" mnemonicParsing="false" onAction="#openSite" text="Open site" />
+                  <SeparatorMenuItem fx:id="menuSep1" mnemonicParsing="false" />
+            <MenuItem fx:id="menuCloseSite" mnemonicParsing="false" onAction="#closeSite" text="Close site">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="F4" control="UP" meta="UP" shift="DOWN" shortcut="UP" />
+                     </accelerator></MenuItem>
+                  <SeparatorMenuItem fx:id="menuSep2" mnemonicParsing="false" />
+            <MenuItem fx:id="menuSave" mnemonicParsing="false" onAction="#saveToFavorites" text="Save to favorites">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="S" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                     </accelerator></MenuItem>
+                  <MenuItem fx:id="menuRename" mnemonicParsing="false" onAction="#renameInFavorites" text="Rename in favorites" />
+                  <MenuItem fx:id="menuRemove" mnemonicParsing="false" onAction="#removeFromFavorites" text="Remove from favorites" />
+            <SeparatorMenuItem fx:id="menuSep3" mnemonicParsing="false" />
+            <MenuItem fx:id="menuSettings" mnemonicParsing="false" onAction="#preferences" text="Preferences…" />
+            <SeparatorMenuItem fx:id="menuSep4" mnemonicParsing="false" />
+            <MenuItem fx:id="menuExit" mnemonicParsing="false" onAction="#quit" text="Quit">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="Q" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                     </accelerator></MenuItem>
+          </items>
+        </Menu>
+            <Menu fx:id="menuPage" mnemonicParsing="false" text="Page">
+              <items>
+                  <MenuItem fx:id="menuRefreshPage" mnemonicParsing="false" onAction="#refreshPage" text="Refresh">
+                     <accelerator>
+                        <KeyCodeCombination alt="UP" code="F5" control="UP" meta="UP" shift="UP" shortcut="ANY" />
+                     </accelerator>
+                  </MenuItem>
+            <SeparatorMenuItem fx:id="menuSep5" mnemonicParsing="false" />
+                  <MenuItem fx:id="menuPrevPage" mnemonicParsing="false" onAction="#prevPage" text="Prev page" />
+                  <MenuItem fx:id="menuNextPage" mnemonicParsing="false" onAction="#nextPage" text="Next page" />
+                  <SeparatorMenuItem fx:id="menuSep51" mnemonicParsing="false" />
+                  <MenuItem fx:id="menuClearCookies" mnemonicParsing="false" onAction="#clearCookies" text="Clear cookies" />
+              </items>
+            </Menu>
+            <Menu fx:id="menuFavorites" mnemonicParsing="false" text="Favorites" />
+        <Menu fx:id="menuHelp" mnemonicParsing="false" text="Help">
+          <items>
+            <MenuItem fx:id="menuAbout" mnemonicParsing="false" onAction="#about" text="About" />
+          </items>
+        </Menu>
+      </menus>
+    </MenuBar>
+      <VBox VBox.vgrow="ALWAYS">
+         <children>
+            <TabPane fx:id="tabPages" VBox.vgrow="ALWAYS" />
+         </children>
+      </VBox>
+  </children>
+</VBox>

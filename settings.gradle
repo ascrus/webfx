@@ -1,0 +1,3 @@
+//noinspection GrUnresolvedAccess
+rootProject.name = 'webfx'
+enableFeaturePreview('GROOVY_COMPILATION_AVOIDANCE')

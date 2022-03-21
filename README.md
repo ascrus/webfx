@@ -20,8 +20,8 @@ The program uses only open source solutions, is cross-platform and free for dist
 ## Installation
 1. Download installation:
 [Windows 64 version 1.0](https://easydata.ru/download/easyworkspace/EasyWebFx_windows-x64_1_0.exe);
-2. Install the program in the specified directory
-3. If necessary, edit in the installed directory EasyWebFx file engine.conf
+2. Install the program in the specified directory;
+3. If necessary, edit in the installed directory EasyWebFx file engine.conf.
 
 ## Working with favorite sites
 * To add a site to favorites, open it from menu File/Open site and select from menu File/Save to favorites;

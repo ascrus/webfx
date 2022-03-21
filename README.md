@@ -74,12 +74,17 @@ stop after the specified timeout time, then the server will be stopped forcibly 
 In file engine.conf, uncomment the required properties into https and http sections.
 
 ## Screenshots
+Open site from favorites:
 ![Open site from favorites](../master/screenshots/screen1.png)
 
+Starting a local web server:
 ![Starting a local web server](../master/screenshots/screen2.png?raw=true)
 
-![Work with local web servers (based on Getl)](../master/screenshots/screen3.png?raw=true)
+Work with local web portal based on Getl:
+![Work with local web portal based on Getl](../master/screenshots/screen3.png?raw=true)
 
+Real-time display via sockets of the log of the called task via the local web server:
 ![Real-time display via sockets of the log of the called task via the local web server](../master/screenshots/screen4.png?raw=true)
 
+Working with external documentation systems:
 ![Working with external documentation systems](../master/screenshots/screen5.png?raw=true)

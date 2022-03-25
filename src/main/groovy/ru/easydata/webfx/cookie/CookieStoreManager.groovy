@@ -3,30 +3,25 @@ package ru.easydata.webfx.cookie
 import getl.h2.H2Connection
 import getl.h2.H2Table
 import getl.proc.Flow
+import groovy.transform.stc.ClosureParams
+import groovy.transform.stc.SimpleType
 
 class CookieStoreManager implements CookieStore {
-    CookieStore store
-
-    CookieStoreManager(String userDir, String sourceUrl) {
+    CookieStoreManager(String userDir) {
         store = new CookieManager().cookieStore
 
         con.connectDatabase = "$userDir/cookies"
         con.connected = true
-
-        def uri = new URI(sourceUrl)
 
         synchronized (table) {
             table.tap {
                 if (!exists)
                     create()
             }
-
-            table.eachRow(where: 'host = \'{host}\' AND port = {port}', queryParams: [host: uri.host, port: uri.port]) { row ->
-                def cookie = Row2Cookie(row)
-                store.add(uri, cookie)
-            }
         }
     }
+
+    private CookieStore store
 
     private final H2Connection con = new H2Connection(login: 'webfx', password: 'EASYDATA WEBFX BROWSER',
             connectProperty: [PAGE_SIZE: 16384, CIPHER: 'AES', DB_CLOSE_ON_EXIT: true], extensionForSqlScripts: true)
@@ -51,6 +46,7 @@ class CookieStoreManager implements CookieStore {
         def row = [:] as Map<String, Object>
         row.host = uri.host
         row.port = uri.port
+        row.path = cookie.path
         row.name = cookie.name
         row.value = (cookie.value != null && cookie.value.length() > 0)?cookie.value:null
         row.maxage = cookie.maxAge
@@ -60,7 +56,6 @@ class CookieStoreManager implements CookieStore {
         row.discard = cookie.discard
         row.httponly = cookie.httpOnly
         row.domain = cookie.domain
-        row.path = cookie.path
         row.portlist = cookie.portlist
         row.secure = cookie.secure
 
@@ -142,6 +137,16 @@ class CookieStoreManager implements CookieStore {
         return res
     }
 
+    void removeFromUrl(String url,
+                @ClosureParams(value = SimpleType, options = ['java.net.URI', 'java.net.HttpCookie'])
+                        Closure<Boolean> cl = null) {
+        def uri = new URI(url)
+        get(uri).each { cookie ->
+            if (cl == null || cl.call(uri, cookie))
+                remove(uri, cookie)
+        }
+    }
+
     @Override
     boolean removeAll() {
         def res = store.removeAll()
@@ -153,5 +158,33 @@ class CookieStoreManager implements CookieStore {
 
     void close() {
         con.connected = false
+    }
+
+    void reloadFromUrl(String sourceUrl) {
+        def params = [:] as Map<String, Object>
+
+        def sourceUri = new URI(sourceUrl)
+        clearFromUri(sourceUri)
+        if (sourceUrl != null) {
+            get(sourceUri).each { cookie ->
+                store.remove(sourceUri, cookie)
+            }
+            params.where = 'host = \'{host}\' AND port = {port}'
+            params.queryParams = [host: sourceUri.host, port: sourceUri.port]
+        }
+
+        table.eachRow(params) { row ->
+            def cookie = Row2Cookie(row)
+            store.add(sourceUri, cookie)
+        }
+    }
+
+    void clearFromUri(URI sourceUri,
+                      @ClosureParams(value = SimpleType, options = ['java.net.URI', 'java.net.HttpCookie'])
+                       Closure<Boolean> cl = null) {
+        get(sourceUri).each { cookie ->
+            if (cl == null || cl.call(sourceUri, cookie))
+                store.remove(sourceUri, cookie)
+        }
     }
 }

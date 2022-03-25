@@ -2,6 +2,7 @@
 package ru.easydata.webfx.controllers
 
 import getl.proc.Executor
+import getl.utils.DateUtils
 import getl.utils.Logs
 import javafx.application.Platform
 import javafx.beans.value.ChangeListener
@@ -25,19 +26,21 @@ import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
 import javafx.scene.web.WebView
 import javafx.stage.Stage
-import ru.easydata.webfx.app.WebFxApplication
-import ru.easydata.webfx.cookie.CookieStoreManager
-import ru.easydata.webfx.utils.Functions
+import ru.easydata.webfx.config.ConfigManager
 
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.regex.Pattern
 
 class MainController {
-    MainController(WebFxApplication app) {
-        this.application = app
+    MainController(Stage mainWindow) {
+        this.mainWindow = mainWindow
     }
 
-    WebFxApplication application
+    static {
+        Logs.Init()
+    }
+
+    private Stage mainWindow
 
     @FXML
     Menu menuFavorites
@@ -48,14 +51,14 @@ class MainController {
     @FXML
     void quit() {
         def dialog = new Alert(Alert.AlertType.CONFIRMATION)
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'WebFx Warning'
         dialog.headerText = 'Closing program'
         dialog.contentText = 'You are sure?'
         dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
         def res = dialog.showAndWait()
         if (res.get() == ButtonType.YES)
-            application.mainWindow.close()
+            mainWindow.close()
     }
 
     Tab getCurrentTab() { tabPages.selectionModel.selectedItem }
@@ -70,7 +73,7 @@ class MainController {
     @FXML
     void openSite() {
         def dialog = new TextInputDialog()
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'Open new page'
         dialog.headerText = 'Enter https or http url (default https)'
         Optional<String> res = dialog.showAndWait()
@@ -105,7 +108,7 @@ class MainController {
     }
 
     void initFavorites() {
-        application.favorites.each { groupName, groupElements ->
+        ConfigManager.config.favorites.each { groupName, groupElements ->
             def menu = new Menu(groupName).tap { mnemonicParsing = false }
             groupElements.each { elementName, data ->
                 def item = new MenuItem(elementName).tap { el ->
@@ -150,21 +153,19 @@ class MainController {
             return (i != -1)?it.substring(0, i):it
         }
 
-        def cookieManager = new CookieManager(new CookieStoreManager(application.userDir.path + '/userdata', url), CookiePolicy.ACCEPT_ORIGINAL_SERVER)
-
         def pane = new VBox()
         pane.setPadding(new Insets(5, 5, 5, 5))
         def tab = new Tab((pageName != null)?('[' + pageName + ']'):tabText, pane)
         tab.closable = true
         tab.id = pageId
-        tab.userData = [url: url, groupName: groupName, name: pageName, cm: cookieManager]
+        tab.userData = [url: url, groupName: groupName, name: pageName]
         Logs.Info "Opening $url ..."
         tab.onCloseRequest  = new EventHandler<Event>() {
             @Override
             void handle(Event event)
             {
                 def dialog = new Alert(Alert.AlertType.CONFIRMATION)
-                (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+                (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
                 dialog.title = 'Confirm'
                 dialog.headerText = "Closing tab ${tab.text}"
                 dialog.contentText = 'You are sure?'
@@ -177,16 +178,11 @@ class MainController {
         tab.onClosed = new EventHandler<Event>() {
             @Override
             void handle(Event event) {
-                def cm = (tab.userData as Map<String, Object>).cm as CookieManager
-                if (cm != null)
-                    (cm.cookieStore as CookieStoreManager).close()
-
                 def wv = (tab.userData as Map<String, Object>).webView as WebView
-                if (wv != null) {
+                if (wv != null)
                     wv.engine.loadContent("Closing ...", 'text/html')
-                }
 
-                def server = application.findServerByUrl(url)
+                def server = ConfigManager.config.localServers.findServerByUrl(url)
                 if (server != null) {
                     server.removeTab(tab)
                     Logs.Info "Closed $url"
@@ -199,7 +195,6 @@ class MainController {
         def openView = {
             WebView webView
             synchronized (this) {
-                CookieHandler.setDefault(cookieManager)
                 webView = new WebView()
             }
             (tab.userData as Map<String, Object>).webView = webView
@@ -207,7 +202,7 @@ class MainController {
             pane.children.add(webView)
 
             webView.engine.tap { webEng ->
-                userDataDirectory = new File(application.userDir.path + '/userdata')
+                userDataDirectory = new File(ConfigManager.config.userDir.path + '/userdata')
                 javaScriptEnabled = true
                 userAgent = 'WebFx Browser 1.0'
 
@@ -218,13 +213,8 @@ class MainController {
                     void changed(ObservableValue<? extends Worker.State> observable, Worker.State oldValue, Worker.State newValue) {
                         switch (newValue) {
                             case Worker.State.SCHEDULED:
-                                if (currentURI != null) {
-                                    def cookies = cookieManager.cookieStore.get(currentURI)
-                                    cookies.each {
-                                        if (it.version > 0)
-                                            cookieManager.cookieStore.remove(currentURI, it)
-                                    }
-                                }
+                                if (currentURI != null)
+                                    ConfigManager.config.cookieStore.clearFromUri(currentURI) { u, c -> c.version > 0 }
                                 break
                             case Worker.State.FAILED:
                                 currentURI = null
@@ -257,6 +247,7 @@ class MainController {
                 void run() {
                     sleep(100)
                     try {
+                        ConfigManager.config.cookieStore.reloadFromUrl(url)
                         webView.engine.load(url)
                     }
                     catch (Exception e) {
@@ -268,8 +259,8 @@ class MainController {
             })
         }
 
-        if (application.autoStartServers) {
-            def server = application.findServerByUrl(url)
+        if (ConfigManager.config.autoStartServers) {
+            def server = ConfigManager.config.localServers.findServerByUrl(url)
             if (server != null)
                 server.addTab(tab)
             if (server != null && server.isStop && !server.ping()) {
@@ -333,8 +324,15 @@ class MainController {
     }
 
     @FXML
-    void refreshPage() {
-        currentWebView?.engine?.reload()
+    void resetSite() {
+        if (currentTab == null)
+            return
+
+        def ud = currentTab.userData as Map<String, Object>
+        def url = ud.url as String
+
+        ConfigManager.config.cookieStore.reloadFromUrl(url)
+        currentWebView.engine.load(url)
     }
 
     @FXML
@@ -349,27 +347,29 @@ class MainController {
 
     @FXML
     void clearCookies() {
-        currentTab?.tap {
-            def ud = userData as Map<String, Object>
-            def url = ud.url as String
-            def cm = ud.cm as CookieManager
-            if (url != null && cm != null) {
-                def sm = cm.cookieStore as CookieStoreManager
-                def uri = new URI(url)
-                sm.get(uri).each {cookie ->
-                    sm.remove(uri, cookie)
-                }
+        currentTab?.tap { tab ->
+            def dialog = new Alert(Alert.AlertType.CONFIRMATION)
+            (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
+            dialog.title = 'Confirm'
+            dialog.headerText = "Clear all cookies from ${tab.text}"
+            dialog.contentText = 'You are sure?'
+            dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
+            def res = dialog.showAndWait()
+            if (res.get() == ButtonType.YES) {
+                def ud = userData as Map<String, Object>
+                def url = ud.url as String
+                ConfigManager.config.cookieStore.removeFromUrl(url)
+                currentWebView.engine.reload()
             }
-            currentWebView.engine.reload()
         }
     }
 
     @FXML
     void closeSite() {
-        def tab = currentTab
-        if (tab != null) {
+        //noinspection GroovyMissingReturnStatement
+        currentTab?.tap { tab ->
             def dialog = new Alert(Alert.AlertType.CONFIRMATION)
-            (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+            (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
             dialog.title = 'Confirm'
             dialog.headerText = "Closing tab ${tab.text}"
             dialog.contentText = 'You are sure?'
@@ -396,7 +396,7 @@ class MainController {
             return
 
         def dialog = new TextInputDialog()
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'Save site to favorites'
         dialog.headerText = 'Enter name in favorites (format: Group/Name)'
         while (true) {
@@ -413,10 +413,10 @@ class MainController {
             if (i > 0 && i < name.length() - 1) {
                 def groupName = name.substring(0, i).trim()
                 name = name.substring(i + 1).trim()
-                def groupMap = application.favorites.get(groupName)
+                def groupMap = ConfigManager.config.favorites.get(groupName)
                 if (groupMap == null) {
                     groupMap = [:] as Map<String, Map<String, Object>>
-                    application.favorites.put(groupName, groupMap)
+                    ConfigManager.config.favorites.put(groupName, groupMap)
                 }
                 groupMap.put(name, [url: (tab.userData as Map<String, Object>).url])
                 tab.id = tabId(groupName, name)
@@ -437,7 +437,7 @@ class MainController {
                 }
                 groupMenu.items.add(item)
                 groupMenu.items.sort(true) { a, b -> a.text <=> b.text }
-                application.saveConfigFavorites()
+                ConfigManager.config.saveFavorites()
 
                 break
             }
@@ -470,7 +470,7 @@ class MainController {
             return
 
         def dialog = new TextInputDialog(curName)
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'Rename in favorites'
         dialog.headerText = 'Enter new name in favorites'
 
@@ -497,9 +497,9 @@ class MainController {
         (tab.userData as Map<String, Object>).name = newName
         tab.text = '[' + newName + ']: ' + currentWebView.engine.title
 
-        def groupMenu = application.favorites.get(groupName)
+        def groupMenu = ConfigManager.config.favorites.get(groupName)
         groupMenu.put(newName, groupMenu.remove(curName))
-        application.saveConfigFavorites()
+        ConfigManager.config.saveFavorites()
     }
 
     @FXML
@@ -517,7 +517,7 @@ class MainController {
         def parent = item.parentMenu
 
         def dialog = new Alert(Alert.AlertType.CONFIRMATION)
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'WebFx warning'
         dialog.headerText = "Removing site \"${parent.text}/${item.text}\" from favorites"
         dialog.contentText = 'You are sure?'
@@ -526,14 +526,14 @@ class MainController {
         if (res.get() == ButtonType.YES) {
             closeSite()
             parent.items.remove(item)
-            application.favorites.get(parent.text)?.remove(item.text)
+            ConfigManager.config.favorites.get(parent.text)?.remove(item.text)
 
             if (parent.items.isEmpty()) {
                 parent.parentMenu.items.remove(parent)
-                application.favorites.remove(parent.text)
+                ConfigManager.config.favorites.remove(parent.text)
             }
 
-            application.saveConfigFavorites()
+            ConfigManager.config.saveFavorites()
         }
     }
 
@@ -544,10 +544,11 @@ class MainController {
 
     @FXML
     void about() {
-        def dialog = new Alert(Alert.AlertType.INFORMATION, 'Version 1.0, (c) 2022 EasyData Company')
-        (dialog.dialogPane.scene.window as Stage).icons.add(application.mainIcon)
+        def dialog = new Alert(Alert.AlertType.INFORMATION,
+                "Version ${ConfigManager.WebFxVersion} [${DateUtils.FormatDate(ConfigManager.config.WebFxBuildDate)}]\nAll Right Reserved by EasyData Company")
+        (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
         dialog.title = 'About program'
-        dialog.headerText = application.titleMainWindow
+        dialog.headerText = ConfigManager.config.titleMainWindow
         dialog.showAndWait()
     }
 }

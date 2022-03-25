@@ -1,3 +1,4 @@
+//file:noinspection unused
 package ru.easydata.webfx.servers
 
 import getl.proc.Executor
@@ -8,18 +9,15 @@ import groovy.transform.Synchronized
 import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 import javafx.scene.control.Tab
-import ru.easydata.webfx.app.WebFxApplication
+import ru.easydata.webfx.config.ConfigManager
 import ru.easydata.webfx.exception.InvalidParameter
 import ru.easydata.webfx.exception.LocalServerAlreadyRunning
 import ru.easydata.webfx.exception.LocalServerAlreadyStopped
 import ru.easydata.webfx.utils.Functions
 
 class LocalServer {
-    LocalServer(WebFxApplication application, String name, String url, String directory, String command, Integer commandTimeout,
-                String shutdownService, Integer shutdownTimeout, String encode) {
-        if (application == null)
-            throw new NullPointerException("Null application!")
-
+    LocalServer(String name, String url, String directory, String command, Integer commandTimeout,
+                String shutdownService, Integer shutdownTimeout, String encode, Boolean autoStopServers) {
         if (name == null || name.length() == 0)
             throw new NullPointerException("Null name!")
 
@@ -35,7 +33,9 @@ class LocalServer {
         if (shutdownTimeout <= 0)
             throw new InvalidParameter(name, 'stopTimeout')
 
-        this.application = application
+        if (autoStopServers == null)
+            throw new NullPointerException("Null autoStopServers!")
+
         this.name = name
         this.uri = Functions.Url2UriWithRoot(url)
 
@@ -48,12 +48,8 @@ class LocalServer {
         this.directory = directory?:FileUtils.PathFromFile(FileUtils.ConvertToUnixPath(this.cmdArgs[0]), true)
 
         this.encode = encode?:'utf-8'
+        this.autoStopServers = autoStopServers
     }
-
-    /** Main application */
-    private WebFxApplication application
-    /** Main application */
-    WebFxApplication getApplication() { application }
 
     /** Local server name */
     private  String name
@@ -94,6 +90,11 @@ class LocalServer {
     private  String encode
     /** Console encode */
     String getEncode() { encode }
+
+    /** Auto stop server on close url tab */
+    private Boolean autoStopServers
+    /** Auto stop server on close url tab */
+    Boolean getAutoStopServers() { autoStopServers }
 
     private final List<Tab> usedTabs = Collections.synchronizedList(new LinkedList<Tab>())
 
@@ -173,7 +174,7 @@ class LocalServer {
             try {
                 def con = WebUtils.CreateConnection(uri.toString(), shutdownService, shutdownTimeout, null, 'POST')
                 def res = con.responseCode
-                if (res = HttpURLConnection.HTTP_OK) {
+                if (res == HttpURLConnection.HTTP_OK) {
                     def cur = 0
                     def max = (shutdownTimeout != null) ? shutdownTimeout * 1000 : Integer.MAX_VALUE
                     Boolean isPing
@@ -269,7 +270,7 @@ class LocalServer {
     void removeTab(Tab tab) {
         if (usedTabs.indexOf(tab) != -1) {
             usedTabs.remove(tab)
-            if (usedTabs.isEmpty() && application.autoStopServers && !isStop)
+            if (usedTabs.isEmpty() && ConfigManager.config.autoStopServers && !isStop)
                 stop()
         }
     }

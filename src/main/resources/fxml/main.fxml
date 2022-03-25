@@ -71,9 +71,9 @@
         </Menu>
             <Menu fx:id="menuPage" mnemonicParsing="false" text="Page">
               <items>
-                  <MenuItem fx:id="menuRefreshPage" mnemonicParsing="false" onAction="#refreshPage" text="Refresh">
+                  <MenuItem fx:id="menuRefreshPage" mnemonicParsing="false" onAction="#resetSite" text="Reset site">
                      <accelerator>
-                        <KeyCodeCombination alt="UP" code="F5" control="UP" meta="UP" shift="UP" shortcut="ANY" />
+                        <KeyCodeCombination alt="UP" code="F5" control="UP" meta="UP" shift="DOWN" shortcut="ANY" />
                      </accelerator>
                   </MenuItem>
             <SeparatorMenuItem fx:id="menuSep5" mnemonicParsing="false" />

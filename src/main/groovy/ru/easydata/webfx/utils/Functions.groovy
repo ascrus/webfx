@@ -1,7 +1,5 @@
 package ru.easydata.webfx.utils
 
-import getl.utils.Logs
-
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -9,9 +7,7 @@ import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLSession
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509ExtendedTrustManager
-import javax.net.ssl.X509TrustManager
 import java.security.SecureRandom
-import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 
 class Functions {
@@ -35,7 +31,7 @@ class Functions {
     }
 
     static class HostnameVerifierAll implements HostnameVerifier {
-        boolean verify(String string, SSLSession ssls) {
+        boolean verify(String string, SSLSession ssl) {
             return true
         }
     }

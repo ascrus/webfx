@@ -4,6 +4,7 @@ package ru.easydata.webfx.controllers
 import getl.proc.Executor
 import getl.utils.DateUtils
 import getl.utils.Logs
+import groovy.transform.Synchronized
 import javafx.application.Platform
 import javafx.beans.value.ChangeListener
 import javafx.beans.value.ObservableValue
@@ -22,18 +23,36 @@ import javafx.scene.control.MenuItem
 import javafx.scene.control.Tab
 import javafx.scene.control.TabPane
 import javafx.scene.control.TextInputDialog
+import javafx.scene.control.Tooltip
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
+import javafx.scene.web.PopupFeatures
+import javafx.scene.web.WebEngine
 import javafx.scene.web.WebView
 import javafx.stage.Stage
+import javafx.stage.WindowEvent
+import javafx.util.Callback
 import ru.easydata.webfx.config.ConfigManager
-
+import ru.easydata.webfx.utils.Functions
 import java.util.concurrent.ConcurrentLinkedDeque
-import java.util.regex.Pattern
 
 class MainController {
     MainController(Stage mainWindow) {
         this.mainWindow = mainWindow
+        mainWindow.onCloseRequest = new EventHandler<WindowEvent>() {
+            @Override
+            void handle(WindowEvent event) {
+                def dialog = new Alert(Alert.AlertType.CONFIRMATION)
+                (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
+                dialog.title = 'WebFx Warning'
+                dialog.headerText = 'Closing program'
+                dialog.contentText = 'You are sure?'
+                dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
+                def res = dialog.showAndWait()
+                if (res.get() != ButtonType.YES)
+                    event.consume()
+            }
+        }
     }
 
     static {
@@ -85,11 +104,11 @@ class MainController {
         if (groupName == null || name == null)
             return null
 
-        return 'tab_' + String.valueOf((groupName + '/' + name).hashCode())
+        return 'tab_' + groupName + '/' + name
     }
 
     static String menuId(String groupName, String name) {
-        return 'menu_' + String.valueOf((groupName + '/' + name).hashCode())
+        return 'menu_' + groupName + '/' + name
     }
 
     Tab findTab(String id) {
@@ -125,6 +144,153 @@ class MainController {
         menuFavorites.items.sort(true) { a, b -> a.text <=> b.text }
     }
 
+    @Synchronized
+    Tab createTab(String url, String groupName, String tabText, Tab owner = null) {
+        def pane = new VBox()
+        pane.setPadding(new Insets(5, 5, 5, 5))
+        def tab = new Tab('[' + tabText + '] loading ...', pane)
+        tab.closable = true
+        tabPages.tabs.add(tab)
+        tabPages.selectionModel.select(tab)
+
+        tab.userData = [url: url, groupName: groupName, tabText: tabText, owner: owner, pages: (owner == null)?[] as List<Tab>:null]
+        if (owner != null)
+            ((owner.userData as Map<String, Object>).pages as List<Tab>).add(tab)
+
+        if (owner == null) {
+            tab.onCloseRequest  = new EventHandler<Event>() {
+                public Tab usedTab
+
+                @Override
+                void handle(Event event)
+                {
+                    def dialog = new Alert(Alert.AlertType.CONFIRMATION)
+                    (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
+                    dialog.title = 'Confirm'
+                    dialog.headerText = "Closing tab \"${tab.text}\""
+                    dialog.contentText = 'You are sure?'
+                    dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
+                    def res = dialog.showAndWait()
+                    if (res.get() != ButtonType.YES)
+                        event.consume()
+                }
+            }.tap { usedTab = tab }
+        }
+
+        tab.onClosed = new EventHandler<Event>() {
+            public Tab usedTab
+
+            @Override
+            void handle(Event event) {
+                def ud = (usedTab.userData as Map<String, Object>)
+
+                if (ud.owner == null) {
+                    def pages = (ud.pages as List<Tab>).collect()
+                    pages.each { tabPages.tabs.remove(it) }
+
+                    def server = ConfigManager.config.localServers.findServerByUrl(url)
+                    if (server != null) {
+                        server.removeTab(usedTab)
+                        Logs.Info "Closed $url"
+                    }
+                }
+                else {
+                    (((ud.owner as Tab).userData as Map<String, Object>).pages as List<Tab>).remove(usedTab)
+                }
+            }
+        }.tap { usedTab = tab }
+
+        return tab
+    }
+
+    WebView createWebView(Tab tab) {
+        def ud = tab.userData as Map<String, Object>
+        def url = ud.url as String
+        def groupName = ud.groupName as String
+        def tabText = ud.tabText as String
+        def owner = ud.owner as Tab
+
+        def res = new WebView()
+        ud.webView = res
+
+        res.engine.tap { webEng ->
+            userDataDirectory = new File(ConfigManager.config.userDir.path + '/userdata')
+            javaScriptEnabled = true
+            userAgent = 'WebFx Browser 1.0'
+
+            createPopupHandler = new Callback<PopupFeatures, WebEngine>() {
+                @Override
+                WebEngine call(PopupFeatures param) {
+                    def newTab = createTab(url, groupName, tabText, owner ?: tab)
+                    WebView newWebView = createWebView(newTab)
+                    VBox.setVgrow(newWebView, Priority.ALWAYS)
+                    (newTab.content as VBox).children.add(newWebView)
+
+                    Logs.Finest("Create popup from $webEng to ${newWebView.engine} ...")
+
+                    return newWebView.engine
+                }
+            }
+
+            titleProperty().addListener(new ChangeListener<String>() {
+                public String usedTabText
+
+                @Override
+                void changed(ObservableValue<? extends String> observable, String oldValue, String newValue) {
+                    if (newValue == null)
+                        return
+
+                    def str = "[$tabText]: " + (newValue?:oldValue?:'')
+                    if (str.length() > 60) {
+                        tab.tooltip = new Tooltip(str)
+                        str = str.substring(0, 57) + ' ...'
+                    }
+                    tab.text = str
+                }
+            }.tap { usedTabText = tabText })
+
+            loadWorker.stateProperty().addListener(new ChangeListener<Worker.State>() {
+                public WebEngine engine
+                private URI currentURI
+
+                @Override
+                void changed(ObservableValue<? extends Worker.State> observable, Worker.State oldValue, Worker.State newValue) {
+                    Logs.Finest("$engine[${engine.location}]: $oldValue -> $newValue")
+                    switch (newValue) {
+                        case Worker.State.SCHEDULED:
+                            if (currentURI != null) {
+                                ConfigManager.config.cookieStore.removeFromUri(currentURI, true) { u, c ->
+                                    c.version > 0
+                                }
+                            }
+
+                            if (engine.location != null && engine.location.length() > 0 && Functions.LoadFile(engine.location)) {
+                                Logs.Finest("$engine: loaded file from ${engine.location} ...")
+                            }
+                            break
+                        case Worker.State.FAILED:
+                            currentURI = null
+                            engine.loadContent('Load error: ' + engine.loadWorker.exception.message, 'text/html')
+                            break
+                        case Worker.State.CANCELLED:
+                            currentURI = null
+                            break
+                        case Worker.State.SUCCEEDED:
+                            if (engine.location != null && engine.location.length() > 0 && Functions.IsValidUrl(engine.location)) {
+                                def u = new URL(engine.location)
+                                currentURI = new URI(u.protocol + '://' + u.authority)
+                            }
+                            else
+                                currentURI = null
+                            break
+                    }
+                }
+            }.tap { engine = webEng })
+        }
+
+        return res
+    }
+
     void loadPage(String url, String groupName = null, String pageName = null) {
         def pageId = tabId(groupName, pageName)
         if (pageId != null) {
@@ -138,116 +304,21 @@ class MainController {
         if (!url.matches('(?i)^http(s)*[:][/][/].+'))
             url = 'https://' + url
 
-        def pattern = Pattern.compile('(?i)^(http.*://)(.+)')
-        def matcher = pattern.matcher(url)
-        if (!matcher.find()) {
-            def alert = new Alert(Alert.AlertType.ERROR)
-            alert.title = 'WebFx error'
-            alert.headerText = 'Invalid url address'
-            alert.contentText = url
-            alert.showAndWait()
-            return
-        }
-        def tabText = matcher.group(2).with {
-            def i = it.indexOf('/')
-            return (i != -1)?it.substring(0, i):it
-        }
-
-        def pane = new VBox()
-        pane.setPadding(new Insets(5, 5, 5, 5))
-        def tab = new Tab((pageName != null)?('[' + pageName + ']'):tabText, pane)
-        tab.closable = true
+        def tabText = pageName?:Functions.Url2TabText(url)
+        def tab = createTab(url, groupName, tabText)
         tab.id = pageId
-        tab.userData = [url: url, groupName: groupName, name: pageName]
         Logs.Info "Opening $url ..."
-        tab.onCloseRequest  = new EventHandler<Event>() {
-            @Override
-            void handle(Event event)
-            {
-                def dialog = new Alert(Alert.AlertType.CONFIRMATION)
-                (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
-                dialog.title = 'Confirm'
-                dialog.headerText = "Closing tab ${tab.text}"
-                dialog.contentText = 'You are sure?'
-                dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
-                def res = dialog.showAndWait()
-                if (res.get() != ButtonType.YES)
-                    event.consume()
-            }
-        }
-        tab.onClosed = new EventHandler<Event>() {
-            @Override
-            void handle(Event event) {
-                def wv = (tab.userData as Map<String, Object>).webView as WebView
-                if (wv != null)
-                    wv.engine.loadContent("Closing ...", 'text/html')
-
-                def server = ConfigManager.config.localServers.findServerByUrl(url)
-                if (server != null) {
-                    server.removeTab(tab)
-                    Logs.Info "Closed $url"
-                }
-            }
-        }
-        tabPages.tabs.add(tab)
-        tabPages.selectionModel.select(tab)
 
         def openView = {
-            WebView webView
-            synchronized (this) {
-                webView = new WebView()
-            }
-            (tab.userData as Map<String, Object>).webView = webView
+            WebView webView = createWebView(tab)
             VBox.setVgrow(webView, Priority.ALWAYS)
-            pane.children.add(webView)
-
-            webView.engine.tap { webEng ->
-                userDataDirectory = new File(ConfigManager.config.userDir.path + '/userdata')
-                javaScriptEnabled = true
-                userAgent = 'WebFx Browser 1.0'
-
-                loadWorker.stateProperty().addListener(new ChangeListener<Worker.State>() {
-                    private URI currentURI
-
-                    @Override
-                    void changed(ObservableValue<? extends Worker.State> observable, Worker.State oldValue, Worker.State newValue) {
-                        switch (newValue) {
-                            case Worker.State.SCHEDULED:
-                                if (currentURI != null)
-                                    ConfigManager.config.cookieStore.clearFromUri(currentURI) { u, c -> c.version > 0 }
-                                break
-                            case Worker.State.FAILED:
-                                currentURI = null
-                                webEng.loadContent('Load error: ' + webEng.loadWorker.exception.message, 'text/html')
-                                break
-                            case Worker.State.SUCCEEDED:
-                                if (webEng.location != null && webEng.location.length() > 0) {
-                                    def u = new URL(webEng.location)
-                                    currentURI = new URI(u.protocol + '://' + u.authority)
-                                }
-                                break
-                        }
-                    }
-                })
-
-                titleProperty().addListener(new ChangeListener<String>() {
-                    @Override
-                    void changed(ObservableValue<? extends String> observable, String oldValue, String newValue) {
-                        def str = '[' + (pageName ?: tabText) + ']: ' + newValue ?: oldValue ?: ''
-                        if (str.length() > 40)
-                            str = str.substring(0, 40) + ' ...'
-                        tab.text = str
-                    }
-                })
-            }
+            (tab.content as VBox).children.add(webView)
             webView.engine.loadContent("Loading $url ...", 'text/html')
 
             Platform.runLater(new Runnable() {
                 @Override
                 void run() {
-                    sleep(100)
                     try {
-                        ConfigManager.config.cookieStore.reloadFromUrl(url)
                         webView.engine.load(url)
                     }
                     catch (Exception e) {
@@ -272,7 +343,7 @@ class MainController {
                 def consoleList = new ListView<String>(listItems)
                 VBox.setVgrow(consoleList, Priority.ALWAYS)
 
-                pane.children.add(consoleList)
+                (tab.content as VBox).children.add(consoleList)
                 try {
                     server.start { code, line ->
                         buffer.addLast((code != null)?"Server \"${server.name}\" was stopped with code $code":line)
@@ -307,7 +378,7 @@ class MainController {
                                 Platform.runLater(new Runnable() {
                                     @Override
                                     void run() {
-                                        pane.children.remove(consoleList)
+                                        (tab.content as VBox).children.remove(consoleList)
                                         openView.call()
                                     }
                                 })
@@ -325,13 +396,14 @@ class MainController {
 
     @FXML
     void resetSite() {
-        if (currentTab == null)
+        def tab = currentTab
+        if (tab == null || tab.id == null || (tab.userData as Map<String, Object>).url == null)
             return
 
         def ud = currentTab.userData as Map<String, Object>
         def url = ud.url as String
 
-        ConfigManager.config.cookieStore.reloadFromUrl(url)
+        ConfigManager.config.cookieStore.removeFromUrl(url)
         currentWebView.engine.load(url)
     }
 
@@ -348,6 +420,9 @@ class MainController {
     @FXML
     void clearCookies() {
         currentTab?.tap { tab ->
+            if ((userData as Map<String, Object>).url == null)
+                return
+
             def dialog = new Alert(Alert.AlertType.CONFIRMATION)
             (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
             dialog.title = 'Confirm'
@@ -358,7 +433,7 @@ class MainController {
             if (res.get() == ButtonType.YES) {
                 def ud = userData as Map<String, Object>
                 def url = ud.url as String
-                ConfigManager.config.cookieStore.removeFromUrl(url)
+                ConfigManager.config.cookieStore.removeFromUrl(url, false)
                 currentWebView.engine.reload()
             }
         }
@@ -368,6 +443,12 @@ class MainController {
     void closeSite() {
         //noinspection GroovyMissingReturnStatement
         currentTab?.tap { tab ->
+            def ud = userData as Map<String, Object>
+            if (ud.url == null && ud.owner != null) {
+                tabPages.tabs.remove(tab)
+                return
+            }
+
             def dialog = new Alert(Alert.AlertType.CONFIRMATION)
             (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
             dialog.title = 'Confirm'
@@ -390,9 +471,7 @@ class MainController {
     @FXML
     void saveToFavorites() {
         def tab = currentTab
-        if (tab == null)
-            return
-        if (tab.id != null)
+        if (tab == null || tab.id != null || (tab.userData as Map<String, Object>).url == null)
             return
 
         def dialog = new TextInputDialog()
@@ -457,9 +536,7 @@ class MainController {
     @FXML
     void renameInFavorites() {
         def tab = currentTab
-        if (tab == null)
-            return
-        if (tab.id == null)
+        if (tab == null || tab.id == null || (tab.userData as Map<String, Object>).url == null)
             return
 
         def tabData = tab.userData as Map<String, Object>
@@ -505,9 +582,7 @@ class MainController {
     @FXML
     void removeFromFavorites() {
         def tab = currentTab
-        if (tab == null)
-            return
-        if (tab.id == null)
+        if (tab == null || tab.id == null || (tab.userData as Map<String, Object>).url == null)
             return
 
         def tabData = tab.userData as Map<String, Object>

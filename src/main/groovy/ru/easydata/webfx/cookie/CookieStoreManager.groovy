@@ -2,26 +2,25 @@ package ru.easydata.webfx.cookie
 
 import getl.h2.H2Connection
 import getl.h2.H2Table
+import getl.jdbc.QueryDataset
+import getl.jdbc.TableDataset
 import getl.proc.Flow
+import getl.utils.BoolUtils
 import groovy.transform.stc.ClosureParams
 import groovy.transform.stc.SimpleType
 
 class CookieStoreManager implements CookieStore {
     CookieStoreManager(String userDir) {
-        store = new CookieManager().cookieStore
-
         con.connectDatabase = "$userDir/cookies"
-        con.connected = true
-
         synchronized (table) {
+            con.connected = true
             table.tap {
                 if (!exists)
                     create()
             }
+            tempTable.create()
         }
     }
-
-    private CookieStore store
 
     private final H2Connection con = new H2Connection(login: 'webfx', password: 'EASYDATA WEBFX BROWSER',
             connectProperty: [PAGE_SIZE: 16384, CIPHER: 'AES', DB_CLOSE_ON_EXIT: true], extensionForSqlScripts: true)
@@ -40,6 +39,10 @@ class CookieStoreManager implements CookieStore {
         field('portlist') { length = 250 }
         field('comment') { length = 1024 }
         field('commentURL') { length = 512 }
+    }
+    private final H2Table tempTable = new H2Table(connection: con, tableName: 'cookies_temp', type: TableDataset.localTemporaryTableType).tap {
+        createOpts { not_persistent = true }
+        field = table.field
     }
 
     static Map<String, Object> Cookie2Row(URI uri, HttpCookie cookie) {
@@ -92,15 +95,15 @@ class CookieStoreManager implements CookieStore {
         return true
     }
 
+    static Boolean IsTempCookie(HttpCookie cookie) {
+        return (cookie.name[0] == '$' || !IsToken(cookie.name) || cookie.maxAge <= 0 || cookie.version > 0)
+    }
+
     @Override
     void add(URI uri, HttpCookie cookie) {
-        store.add(uri, cookie)
-
-        if (cookie.name[0] == '$' || !IsToken(cookie.name) || cookie.maxAge <= 0 || cookie.version > 0)
-            return
-
         synchronized (table) {
-            new Flow().writeTo(dest: table, dest_operation: 'merge') { upd ->
+            def destTable = (IsTempCookie(cookie))?tempTable:table
+            new Flow().writeTo(dest: destTable, dest_operation: 'merge') { upd ->
                 def row = Cookie2Row(uri, cookie)
                 upd.call(row)
             }
@@ -109,82 +112,91 @@ class CookieStoreManager implements CookieStore {
 
     @Override
     List<HttpCookie> get(URI uri) {
-        return store.get(uri)
+        def res = [] as List<HttpCookie>
+        def params = [host: uri.host, port: uri.port]
+        synchronized (table) {
+            table.eachRow(where: 'host = \'{host}\' AND port = {port}', queryParams: params) { row ->
+                res.add(Row2Cookie(row))
+            }
+            tempTable.eachRow(where: 'host = \'{host}\' AND port = {port}', queryParams: params) { row ->
+                res.add(Row2Cookie(row))
+            }
+        }
+        return res
     }
 
     @Override
     List<HttpCookie> getCookies() {
-        return store.cookies
+        def res = [] as List<HttpCookie>
+        synchronized (table) {
+            table.eachRow { row ->
+                res.add(Row2Cookie(row))
+            }
+            tempTable.eachRow { row ->
+                res.add(Row2Cookie(row))
+            }
+        }
+        return res
     }
 
     @Override
     List<URI> getURIs() {
-        return store.getURIs()
+        def res = [] as List<URI>
+        synchronized (table) {
+            new QueryDataset(connection: con,
+                    query: 'SELECT DISTINCT host, port, secure FROM cookies UNION SELECT DISTINCT host, port, secure FROM cookies_temp').eachRow { row ->
+                def url = ((BoolUtils.IsValue(row.secure))?'https':'http') + row.host + ':' + row.port
+                res.add(new URI(url))
+            }
+        }
+        return res
     }
 
     @Override
     boolean remove(URI uri, HttpCookie cookie) {
-        def res = store.remove(uri, cookie)
-        if (res && cookie.domain == uri.host) {
-            synchronized (table) {
-                res = (new Flow().writeTo(dest: table, dest_operation: 'delete') { del ->
-                    def row = Cookie2Row(uri, cookie)
-                    del.call(row)
-                } > 0)
-            }
+        Boolean res
+        synchronized (table) {
+            def destTable = (IsTempCookie(cookie))?tempTable:table
+            res = (new Flow().writeTo(dest: destTable, dest_operation: 'delete') { del ->
+                def row = Cookie2Row(uri, cookie)
+                del.call(row)
+            } > 0)
         }
 
         return res
     }
 
-    void removeFromUrl(String url,
+    void removeFromUrl(String url, Boolean onlyTemporary = true,
+                       @ClosureParams(value = SimpleType, options = ['java.net.URI', 'java.net.HttpCookie'])
+                               Closure<Boolean> cl = null) {
+        removeFromUri(new URI(url), onlyTemporary, cl)
+    }
+
+    void removeFromUri(URI uri, Boolean onlyTemporary = true,
                 @ClosureParams(value = SimpleType, options = ['java.net.URI', 'java.net.HttpCookie'])
                         Closure<Boolean> cl = null) {
-        def uri = new URI(url)
-        get(uri).each { cookie ->
-            if (cl == null || cl.call(uri, cookie))
-                remove(uri, cookie)
+        synchronized (table) {
+            get(uri).each { cookie ->
+                if (!onlyTemporary || IsTempCookie(cookie))
+                    if (cl == null || cl.call(uri, cookie))
+                        remove(uri, cookie)
+            }
         }
     }
 
     @Override
     boolean removeAll() {
-        def res = store.removeAll()
-        if (res)
+        synchronized (table) {
             table.truncate()
+            tempTable.truncate()
+        }
 
-        return res
+        return true
     }
 
     void close() {
-        con.connected = false
-    }
-
-    void reloadFromUrl(String sourceUrl) {
-        def params = [:] as Map<String, Object>
-
-        def sourceUri = new URI(sourceUrl)
-        clearFromUri(sourceUri)
-        if (sourceUrl != null) {
-            get(sourceUri).each { cookie ->
-                store.remove(sourceUri, cookie)
-            }
-            params.where = 'host = \'{host}\' AND port = {port}'
-            params.queryParams = [host: sourceUri.host, port: sourceUri.port]
-        }
-
-        table.eachRow(params) { row ->
-            def cookie = Row2Cookie(row)
-            store.add(sourceUri, cookie)
-        }
-    }
-
-    void clearFromUri(URI sourceUri,
-                      @ClosureParams(value = SimpleType, options = ['java.net.URI', 'java.net.HttpCookie'])
-                       Closure<Boolean> cl = null) {
-        get(sourceUri).each { cookie ->
-            if (cl == null || cl.call(sourceUri, cookie))
-                store.remove(sourceUri, cookie)
+        synchronized (table) {
+            con.connected = false
         }
     }
 }

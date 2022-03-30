@@ -221,12 +221,11 @@ class MainController {
             createPopupHandler = new Callback<PopupFeatures, WebEngine>() {
                 @Override
                 WebEngine call(PopupFeatures param) {
+
                     def newTab = createTab(url, groupName, tabText, owner ?: tab)
                     WebView newWebView = createWebView(newTab)
                     VBox.setVgrow(newWebView, Priority.ALWAYS)
                     (newTab.content as VBox).children.add(newWebView)
-
-                    Logs.Finest("Create popup from $webEng to ${newWebView.engine} ...")
 
                     return newWebView.engine
                 }
@@ -251,11 +250,13 @@ class MainController {
 
             loadWorker.stateProperty().addListener(new ChangeListener<Worker.State>() {
                 public WebEngine engine
+                public Tab curTab
                 private URI currentURI
+                private Boolean isLoadFile = false
+                private Boolean isInit = true
 
                 @Override
                 void changed(ObservableValue<? extends Worker.State> observable, Worker.State oldValue, Worker.State newValue) {
-                    Logs.Finest("$engine[${engine.location}]: $oldValue -> $newValue")
                     switch (newValue) {
                         case Worker.State.SCHEDULED:
                             if (currentURI != null) {
@@ -264,11 +265,29 @@ class MainController {
                                 }
                             }
 
-                            if (engine.location != null && engine.location.length() > 0 && Functions.LoadFile(engine.location)) {
-                                Logs.Finest("$engine: loaded file from ${engine.location} ...")
+                            def curUrl = engine.location
+                            if (!isLoadFile && curUrl != null && curUrl.length() > 0) {
+                                def fileName = Functions.CheckAttachmentFile(curUrl)
+                                if (fileName != null) {
+                                    isLoadFile = true
+                                    Platform.runLater(new Runnable() {
+                                        @Override
+                                        void run() {
+                                            try {
+                                                Functions.LoadFile(curUrl, fileName, mainWindow)
+                                            }
+                                            finally {
+                                                isLoadFile = false
+                                                if (isInit)
+                                                    tabPages.tabs.remove(curTab)
+                                            }
+                                        }
+                                    })
+                                }
                             }
                             break
                         case Worker.State.FAILED:
+                            isInit = false
                             currentURI = null
                             engine.loadContent('Load error: ' + engine.loadWorker.exception.message, 'text/html')
                             break
@@ -276,6 +295,7 @@ class MainController {
                             currentURI = null
                             break
                         case Worker.State.SUCCEEDED:
+                            isInit = false
                             if (engine.location != null && engine.location.length() > 0 && Functions.IsValidUrl(engine.location)) {
                                 def u = new URL(engine.location)
                                 currentURI = new URI(u.protocol + '://' + u.authority)
@@ -285,7 +305,7 @@ class MainController {
                             break
                     }
                 }
-            }.tap { engine = webEng })
+            }.tap { engine = webEng; curTab = tab })
         }
 
         return res
@@ -499,7 +519,7 @@ class MainController {
                 }
                 groupMap.put(name, [url: (tab.userData as Map<String, Object>).url])
                 tab.id = tabId(groupName, name)
-                tab.text = '[' + name + ']' + ': ' + tab.text
+                tab.text = '[' + name + ']' + ': ' + currentWebView.engine.title
                 (tab.userData as Map<String, Object>).putAll([groupName: groupName, name: name])
 
                 def groupMenu = menuFavorites.items.find { it.text.toLowerCase() == groupName.toLowerCase() } as Menu

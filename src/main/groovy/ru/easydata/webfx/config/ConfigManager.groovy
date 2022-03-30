@@ -47,6 +47,7 @@ class ConfigManager {
         this.engineConfigFile = new File(userDir.path + '/engine.conf')
         this.favoritesConfigFile = new File(userDir.path + '/favorites.conf')
         this.windowsConfigFile = new File(userDir.path + '/windows.conf')
+        this.downloadsConfigFile = new File(userDir.path + '/downloads.conf')
 
         Logs.global.logFileName = this.userDirPath + '/log/webfx-{date}.log'
         Logs.Info "*** Start $this.titleMainWindow"
@@ -57,6 +58,7 @@ class ConfigManager {
         initEngine()
         loadFavorites()
         loadWindowsParams()
+        loadDownloadsParams()
 
         this.cookieStore = new CookieStoreManager(userDir.path + '/userdata')
         this.cookieManager = new CookieManager(cookieStore, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
@@ -87,6 +89,8 @@ class ConfigManager {
     File getFavoritesConfigFile() { favoritesConfigFile }
     private File windowsConfigFile
     File getWindowsConfigFile() { windowsConfigFile }
+    private File downloadsConfigFile
+    File getDownloadsConfigFile() { downloadsConfigFile }
 
     private Boolean autoStartServers
     Boolean getAutoStartServers() { autoStartServers }
@@ -105,6 +109,7 @@ class ConfigManager {
     public final Map<String, Map<String, Map<String, Object>>> favorites = new ConcurrentHashMap<String, Map<String, Map<String, Object>>>()
     public final ListServers localServers = Collections.synchronizedList(new ListServers())
     public final Map<String, Map<String, Object>> windowsParams = new ConcurrentHashMap<String, Map<String, Object>>()
+    public final Map<String, String> downloadsParams = new ConcurrentHashMap<String, String>()
 
     private CookieStoreManager cookieStore
     CookieStoreManager getCookieStore() { cookieStore }
@@ -184,6 +189,7 @@ class ConfigManager {
         finally {
             cookieStore.close()
             saveWindowsParams()
+            saveDownloadsParams()
         }
     }
 
@@ -196,16 +202,37 @@ class ConfigManager {
     }
 
     void loadWindowsParams() {
-        windowsParams.clear()
-        if (windowsConfigFile.exists()) {
-            windowsParams.putAll(ConfigSlurper.LoadConfigFile(file: windowsConfigFile) as Map<String, Map<String, Object>>)
-            Logs.Info("Loaded ${windowsParams.size()} windows description")
+        synchronized (windowsParams) {
+            windowsParams.clear()
+            if (windowsConfigFile.exists()) {
+                windowsParams.putAll(ConfigSlurper.LoadConfigFile(file: windowsConfigFile) as Map<String, Map<String, Object>>)
+                Logs.Info("Loaded ${windowsParams.size()} windows parameters")
+            }
         }
     }
 
     void saveWindowsParams() {
-        ConfigSlurper.SaveConfigFile(data: windowsParams, file: windowsConfigFile)
-        Logs.Info("Saved ${windowsParams.size()} windows description")
+        synchronized (windowsParams) {
+            ConfigSlurper.SaveConfigFile(data: windowsParams, file: windowsConfigFile)
+            Logs.Info("Saved ${windowsParams.size()} windows parameters")
+        }
+    }
+
+    void loadDownloadsParams() {
+        synchronized (downloadsParams) {
+            downloadsParams.clear()
+            if (downloadsConfigFile.exists()) {
+                downloadsParams.putAll(ConfigSlurper.LoadConfigFile(file: downloadsConfigFile) as Map<String, String>)
+                Logs.Info("Loaded ${windowsParams.size()} downloads parameters")
+            }
+        }
+    }
+
+    void saveDownloadsParams() {
+        synchronized (downloadsParams) {
+            ConfigSlurper.SaveConfigFile(data: downloadsParams, file: downloadsConfigFile)
+            Logs.Info("Saved ${downloadsParams.size()} downloads parameters")
+        }
     }
 
     void monitorWindow(String name, Stage stage) {

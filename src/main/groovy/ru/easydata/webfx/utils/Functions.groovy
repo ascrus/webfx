@@ -1,8 +1,25 @@
 //file:noinspection unused
 package ru.easydata.webfx.utils
 
+import getl.utils.FileUtils
 import groovy.transform.CompileStatic
-
+import javafx.application.Platform
+import javafx.concurrent.Task
+import javafx.event.ActionEvent
+import javafx.event.EventHandler
+import javafx.fxml.FXMLLoader
+import javafx.scene.Parent
+import javafx.scene.Scene
+import javafx.scene.control.Alert
+import javafx.scene.control.ButtonType
+import javafx.stage.FileChooser
+import javafx.stage.Modality
+import javafx.stage.Stage
+import javafx.stage.StageStyle
+import javafx.stage.Window
+import javafx.stage.WindowEvent
+import ru.easydata.webfx.config.ConfigManager
+import ru.easydata.webfx.controllers.DownloadController
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -66,33 +83,55 @@ class Functions {
         return new URL(u.protocol, u.host, u.port, '/').toURI()
     }
 
-    static Boolean LoadFile(String url) {
+    static String CheckAttachmentFile(String url, String requestMethod = 'GET') {
         if (url == null)
             throw new NullPointerException("Null url!")
+        if (requestMethod == null)
+            throw new NullPointerException("Null requestMethod!")
 
-        def res = false
         if (!IsValidUrl(url))
-            return res
+            return null
 
         def urlObj = new URL(url)
         def con = urlObj.openConnection()
         if (urlObj.protocol == 'https')
-            (con as HttpsURLConnection).requestMethod = 'GET'
+            (con as HttpsURLConnection).requestMethod = requestMethod
         else if (urlObj.protocol == 'http')
-            (con as HttpURLConnection).requestMethod = 'GET'
+            (con as HttpURLConnection).requestMethod = requestMethod
         else
-            return res
+            return null
+
+        String res = null
 
         con.connect()
-        def headers = con.headerFields
-        def content = headers.get("Content-Disposition") ?: headers.get("content-disposition")
-        if (content != null) {
-            def elem = content[0]
-            if (elem.contains('attachment;')) {
-                def fn = elem.split('filename=')
-                def fileName = fn[fn.length - 1].replace('"', '')
-                res = true
+        try {
+            def headers = con.headerFields
+            def content = headers.get('Content-Disposition') ?: headers.get('content-disposition')
+            if (content != null) {
+                def elem = content[0]
+                if (elem.contains('attachment;')) {
+                    def fn = elem.split('filename=')
+                    res = fn[fn.length - 1].replace('"', '').trim()
+                }
+            } else {
+                content = headers.get('Content-Type') ?: headers.get('content-type')
+                if (content != null && content[0] == 'application/octet-stream') {
+                    Platform.runLater(new Runnable() {
+                        @Override
+                        void run() {
+                            def alert = new Alert(Alert.AlertType.ERROR, 'Multi-part download not supported!')
+                            alert.title = 'Download error'
+                            alert.showAndWait()
+                        }
+                    })
+                }
             }
+        }
+        finally {
+            if (urlObj.protocol == 'https')
+                (con as HttpsURLConnection).disconnect()
+            else if (urlObj.protocol == 'http')
+                (con as HttpURLConnection).disconnect()
         }
 
         return res
@@ -129,5 +168,164 @@ class Functions {
         }
 
         return res
+    }
+
+    static Long DetectAttachmentSize(URL url) {
+        if (url == null)
+            throw new NullPointerException("Null url!")
+
+        if (!(url.protocol in ['http', 'https']))
+            throw new Exception("Invalid protocol \"${url.protocol}\"!")
+
+        Long res = null
+        if (url.protocol == 'http') {
+            def con = url.openConnection() as HttpURLConnection
+            try {
+                con.setRequestMethod("HEAD")
+                res = con.getContentLengthLong()
+            }
+            finally {
+                con.disconnect()
+            }
+        }
+        else {
+            def con = url.openConnection() as HttpsURLConnection
+            try {
+                con.setRequestMethod("HEAD")
+                res = con.getContentLengthLong()
+            }
+            finally {
+                con.disconnect()
+            }
+        }
+
+        return res
+    }
+
+    static void LoadFile(String url, String fileName, Window owner) {
+        def uri = Url2UriWithRoot(url)
+        def rootUrl = uri.toString()
+        def defaultDir = ConfigManager.config.downloadsParams.get(rootUrl)
+
+        def fs = new FileChooser()
+        if (defaultDir != null)
+            fs.initialDirectory = new File(defaultDir)
+        fs.initialFileName = fileName
+        def file = fs.showSaveDialog(owner)
+        if (file == null)
+            return
+        if (!file.exists())
+            file.parentFile.mkdirs()
+
+        ConfigManager.config.downloadsParams.put(rootUrl, file.parent)
+
+        def urlObj = new URL(url)
+        def fileSize = DetectAttachmentSize(urlObj)
+        def percentFile = fileSize.intdiv(100)
+
+        def con = urlObj.openConnection()
+        if (urlObj.protocol == 'https')
+            (con as HttpsURLConnection).requestMethod = 'GET'
+        else
+            (con as HttpURLConnection).requestMethod = 'GET'
+
+        con.connect()
+        try {
+            def controller = new DownloadController()
+            def loader = new FXMLLoader()
+            def fxml = ConfigManager.getResource('/fxml/download.fxml')
+            loader.setLocation(fxml)
+            loader.controller = controller
+            def root = loader.load() as Parent
+
+            def stage = new Stage(StageStyle.UTILITY)
+            stage.title = "Downloading file"
+            stage.initModality(Modality.APPLICATION_MODAL)
+            stage.scene = new Scene(root)
+            controller.labelFileName.text = 'File: ' + fileName
+            controller.labelFileSize.text = 'Size: ' + FileUtils.SizeBytes(fileSize)
+            controller.progressBar.progress = 0
+
+            stage.onCloseRequest = new EventHandler<WindowEvent>() {
+                @Override
+                void handle(WindowEvent event) {
+                    event.consume()
+                }
+            }
+
+            def allowDownload = true
+            def isError = false
+
+            controller.buttonCancel.onAction = new EventHandler<ActionEvent>() {
+                @Override
+                void handle(ActionEvent event) {
+                    def dialog = new Alert(Alert.AlertType.CONFIRMATION)
+                    (dialog.dialogPane.scene.window as Stage).icons.add(ConfigManager.config.mainIcon)
+                    dialog.title = 'Confirm'
+                    dialog.headerText = "Cancel download file"
+                    dialog.contentText = 'You are sure?'
+                    dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
+                    def res = dialog.showAndWait()
+                    if (res.get() == ButtonType.YES)
+                        allowDownload = false
+                }
+            }
+            controller.buttonClose.onAction = new EventHandler<ActionEvent>() {
+                @Override
+                void handle(ActionEvent event) {
+                    stage.close()
+                }
+            }
+
+            def task = new Task<Void>() {
+                @Override
+                protected Void call() throws Exception {
+                    def curPercent = 0
+                    try (def is = con.getInputStream(); def os = new FileOutputStream(file)) {
+                        int size = 0
+                        int len = 0
+                        byte[] buf = new byte[4096]
+                        while (allowDownload && (size = is.read(buf)) != -1) {
+                            len += size
+                            os.write(buf, 0, size)
+                            def newPercent = len.intdiv(percentFile)
+                            if (newPercent > curPercent) {
+                                updateProgress(newPercent, 100)
+                                updateTitle("Downloading file ${newPercent}%")
+                                curPercent = newPercent
+                            }
+                        }
+                    }
+                    catch (Exception e) {
+                        isError = true
+                        throw e
+                    }
+                    finally {
+                        controller.buttonClose.disable = false
+                        controller.buttonCancel.disable = true
+                        if (isError)
+                            updateTitle("Download file error")
+                        else if (allowDownload)
+                            updateTitle("Download file complete")
+                        else
+                            updateTitle("Download file cancel")
+                    }
+                }
+            }
+
+            stage.titleProperty().bind(task.titleProperty())
+            controller.progressBar.progressProperty().bind(task.progressProperty())
+            new Thread(task).start()
+
+            stage.showAndWait()
+            if (!allowDownload || isError)
+                file.delete()
+        }
+        finally {
+            if (urlObj.protocol == 'https')
+                (con as HttpsURLConnection).disconnect()
+            else
+                (con as HttpURLConnection).disconnect()
+        }
     }
 }

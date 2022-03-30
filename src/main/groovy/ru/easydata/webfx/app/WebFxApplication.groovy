@@ -35,9 +35,8 @@ class WebFxApplication extends Application {
     @Override
     void start(Stage stage) {
         def controller = new MainController(stage)
-
         def loader = new FXMLLoader()
-        def url = getClass().getResource('/fxml/main.fxml')
+        def url = ConfigManager.getResource('/fxml/main.fxml')
         loader.setLocation(url)
         loader.controller = controller
         def root = loader.load() as Parent

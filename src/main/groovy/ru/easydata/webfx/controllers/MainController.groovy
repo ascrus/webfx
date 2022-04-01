@@ -361,6 +361,7 @@ class MainController {
                 def buffer = new ConcurrentLinkedDeque<String>()
 
                 def consoleList = new ListView<String>(listItems)
+                consoleList.style = '-fx-font: 12 monospaced;'
                 VBox.setVgrow(consoleList, Priority.ALWAYS)
 
                 (tab.content as VBox).children.add(consoleList)

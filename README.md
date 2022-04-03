@@ -19,7 +19,7 @@ The program uses only open source solutions, is cross-platform and free for dist
 
 ## Installation
 1. Download installation:
-[Windows 64 version 1.0.1](https://easydata.ru/download/easyworkspace/EasyWebFx_windows-x64_1_0_1.exe);
+[Windows 64 version 1.0.3](https://easydata.ru/download/easyworkspace/EasyWebFx_windows-x64_1_0_3.exe);
 2. Install the program in the specified directory;
 3. If necessary, edit in the installed directory EasyWebFx file engine.conf.
 

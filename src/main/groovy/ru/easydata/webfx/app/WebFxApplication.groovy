@@ -1,6 +1,7 @@
 //file:noinspection unused
 package ru.easydata.webfx.app
 
+import com.install4j.api.launcher.SplashScreen
 import getl.utils.FileUtils
 import getl.utils.MapUtils
 import javafx.application.Application
@@ -28,7 +29,9 @@ class WebFxApplication extends Application {
             mainIcon = new Image(iconStream)
         }
 
+        SplashScreen.writeMessage('Load configuration ...')
         ConfigManager.config.init(userDirPath, titleMainWindow, mainIcon, mainArguments)
+        SplashScreen.writeMessage('Launch application ...')
         launch(this, args)
     }
 
@@ -57,11 +60,10 @@ class WebFxApplication extends Application {
             height = screenBounds.height - 100
             centerOnScreen()
 
-            //maximized = true
-
             ConfigManager.config.monitorWindow('MainWindow', stage)
 
             show()
+            SplashScreen.hide()
         }
     }
 

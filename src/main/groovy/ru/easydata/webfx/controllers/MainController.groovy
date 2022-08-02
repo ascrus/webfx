@@ -150,12 +150,25 @@ class MainController {
         pane.setPadding(new Insets(5, 5, 5, 5))
         def tab = new Tab('[' + tabText + '] loading ...', pane)
         tab.closable = true
-        tabPages.tabs.add(tab)
-        tabPages.selectionModel.select(tab)
 
         tab.userData = [url: url, groupName: groupName, tabText: tabText, owner: owner, pages: (owner == null)?[] as List<Tab>:null]
-        if (owner != null)
-            ((owner.userData as Map<String, Object>).pages as List<Tab>).add(tab)
+        List<Tab> childTabs
+        Tab lastTab = null
+        if (owner != null) {
+            tab.style = '-fx-font-style: italic;'
+            childTabs = (owner.userData as Map<String, Object>).pages as List<Tab>
+            if (!childTabs.isEmpty())
+                lastTab = childTabs.last()
+            else
+                lastTab = owner
+            childTabs.add(tab)
+        }
+
+        if (lastTab == null)
+            tabPages.tabs.add(tab)
+        else
+            tabPages.tabs.add(tabPages.tabs.indexOf(lastTab) + 1, tab)
+        tabPages.selectionModel.select(tab)
 
         if (owner == null) {
             tab.onCloseRequest  = new EventHandler<Event>() {

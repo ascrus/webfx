@@ -2,6 +2,8 @@
 package ru.easydata.webfx.config
 
 import getl.config.ConfigSlurper
+import getl.files.FileManager
+import getl.proc.FileCleaner
 import getl.utils.BoolUtils
 import getl.utils.DateUtils
 import getl.utils.FileUtils
@@ -63,6 +65,8 @@ class ConfigManager {
         this.cookieStore = new CookieStoreManager(userDir.path + '/userdata')
         this.cookieManager = new CookieManager(cookieStore, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
         CookieHandler.setDefault(cookieManager)
+
+        cleanLogs()
     }
 
     public static final Properties WebFxProperties = new Properties()
@@ -299,5 +303,31 @@ class ConfigManager {
                     windowsParams.get(name).put('maximized', newValue)
             }
         })
+    }
+
+    /** Clean old log files */
+    private void cleanLogs() {
+        try {
+            new FileCleaner().tap { fc ->
+                fc.quietMode = true
+                fc.source = new FileManager().tap {
+                    rootPath = userDirPath + '/log'
+                }
+                fc.useSourcePath {
+                    mask = 'webfx-{date}.{ext}'
+                    variable('date') { type = dateFieldType; format = 'yyyy-MM-dd' }
+                    variable('ext') { format = '(log|lck|log[.][0-9])' }
+                }
+                fc.removeEmptyDirs = false
+                def storageDate = DateUtils.AddDate('dd', -9, DateUtils.CurrentDate())
+                fc.filterFiles { file ->
+                    file.date < storageDate
+                }
+                process()
+            }
+        }
+        catch (Exception e) {
+            Logs.global.severe("Error clean old log files: ${e.message}")
+        }
     }
 }

@@ -2,6 +2,7 @@
 package ru.easydata.webfx.utils
 
 import getl.utils.FileUtils
+import getl.utils.StringUtils
 import groovy.transform.CompileStatic
 import javafx.application.Platform
 import javafx.concurrent.Task
@@ -211,6 +212,9 @@ class Functions {
         if (defaultDir != null)
             fs.initialDirectory = new File(defaultDir)
         fs.initialFileName = fileName
+        def ext = FileUtils.FileExtension(fileName)
+        fs.extensionFilters.add(new FileChooser.ExtensionFilter(StringUtils.ToCamelCase(ext) + ' file', "*.$ext"))
+        fs.extensionFilters.add(new FileChooser.ExtensionFilter('All files', '*.*'))
         def file = fs.showSaveDialog(owner)
         if (file == null)
             return
@@ -242,7 +246,7 @@ class Functions {
             stage.title = "Downloading file"
             stage.initModality(Modality.APPLICATION_MODAL)
             stage.scene = new Scene(root)
-            controller.labelFileName.text = 'File: ' + fileName
+            controller.labelFileName.text = 'File: ' + file.path
             controller.labelFileSize.text = 'Size: ' + FileUtils.SizeBytes(fileSize)
             controller.progressBar.progress = 0
 

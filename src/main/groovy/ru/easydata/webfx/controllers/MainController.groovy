@@ -104,11 +104,11 @@ class MainController {
         if (groupName == null || name == null)
             return null
 
-        return 'tab_' + groupName + '/' + name
+        return 'tab_' + groupName.toLowerCase() + '/' + name.toLowerCase()
     }
 
     static String menuId(String groupName, String name) {
-        return 'menu_' + groupName + '/' + name
+        return 'menu_' + groupName.toLowerCase() + '/' + name.toLowerCase()
     }
 
     Tab findTab(String id) {
@@ -151,7 +151,7 @@ class MainController {
         def tab = new Tab('[' + tabText + '] loading ...', pane)
         tab.closable = true
 
-        tab.userData = [url: url, groupName: groupName, tabText: tabText, owner: owner, pages: (owner == null)?[] as List<Tab>:null]
+        tab.userData = [url: url, groupName: groupName, name: tabText, tabText: tabText, owner: owner, pages: (owner == null)?[] as List<Tab>:null]
         List<Tab> childTabs
         Tab lastTab = null
         if (owner != null) {
@@ -234,7 +234,6 @@ class MainController {
             createPopupHandler = new Callback<PopupFeatures, WebEngine>() {
                 @Override
                 WebEngine call(PopupFeatures param) {
-
                     def newTab = createTab(url, groupName, tabText, owner ?: tab)
                     WebView newWebView = createWebView(newTab)
                     VBox.setVgrow(newWebView, Priority.ALWAYS)
@@ -315,7 +314,13 @@ class MainController {
                             }
                             else
                                 currentURI = null
+
+                            //engine.executeScript('document.body.style.overflow = "visible";')
                             break
+
+                        /*case Worker.State.RUNNING:
+                            engine.executeScript('document.body.style.overflow = "visible";')
+                            break*/
                     }
                 }
             }.tap { engine = webEng; curTab = tab })
@@ -526,6 +531,7 @@ class MainController {
             if (i > 0 && i < name.length() - 1) {
                 def groupName = name.substring(0, i).trim()
                 name = name.substring(i + 1).trim()
+                groupName = (ConfigManager.config.favorites.keySet().find { it.toLowerCase() == groupName.toLowerCase() })?:groupName
                 def groupMap = ConfigManager.config.favorites.get(groupName)
                 if (groupMap == null) {
                     groupMap = [:] as Map<String, Map<String, Object>>
@@ -633,6 +639,7 @@ class MainController {
         dialog.buttonTypes.setAll(ButtonType.YES, ButtonType.NO)
         def res = dialog.showAndWait()
         if (res.get() == ButtonType.YES) {
+            tab.id = null
             closeSite()
             parent.items.remove(item)
             ConfigManager.config.favorites.get(parent.text)?.remove(item.text)

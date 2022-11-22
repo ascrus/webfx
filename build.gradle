@@ -4,8 +4,6 @@
 */
 
 import org.apache.tools.ant.filters.ReplaceTokens
-
-import java.text.DateFormat
 import java.text.SimpleDateFormat
 
 plugins {
@@ -30,10 +28,18 @@ version "$webfx_version"
 
 repositories {
     mavenCentral()
+    maven {
+        url 'http://easydata.ru:8081/repository/maven-snapshots/'
+        allowInsecureProtocol = true
+    }
+    maven {
+        url 'http://easydata.ru:8081/repository/maven-releases/'
+        allowInsecureProtocol = true
+    }
 }
 
 dependencies {
-    implementation("net.sourceforge.getl:getl:$getl_version")
+    api("net.sourceforge.getl:getl:$getl_version")
     implementation fileTree(dir: 'libs')
 
     testImplementation 'junit:junit:4.13.2'

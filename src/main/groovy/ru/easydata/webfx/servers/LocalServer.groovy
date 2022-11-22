@@ -172,7 +172,7 @@ class LocalServer {
         Logs.Info("Shutdowning local server $name with $uri ...")
         if (shutdownService != null) {
             try {
-                def con = WebUtils.CreateConnection(uri.toString(), shutdownService, shutdownTimeout, null, 'POST')
+                def con = WebUtils.CreateConnection(url: uri.toString(), service: shutdownService, connectTimeout: shutdownTimeout, requestMethod: 'POST')
                 def res = con.responseCode
                 if (res == HttpURLConnection.HTTP_OK) {
                     def cur = 0

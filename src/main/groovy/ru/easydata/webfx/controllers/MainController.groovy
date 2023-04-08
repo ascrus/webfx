@@ -324,6 +324,13 @@ class MainController {
                     }
                 }
             }.tap { engine = webEng; curTab = tab })
+
+            webEng.loadWorker.exceptionProperty().addListener(new ChangeListener<Throwable>() {
+                @Override
+                void changed(ObservableValue<? extends Throwable> ov, Throwable t, Throwable t1) {
+                    Logs.Severe "Received exception: " + t1.getMessage(), t1
+                }
+            })
         }
 
         return res
@@ -349,6 +356,7 @@ class MainController {
 
         def openView = {
             WebView webView = createWebView(tab)
+            webView.setContextMenuEnabled(true)
             VBox.setVgrow(webView, Priority.ALWAYS)
             (tab.content as VBox).children.add(webView)
             webView.engine.loadContent("Loading $url ...", 'text/html')

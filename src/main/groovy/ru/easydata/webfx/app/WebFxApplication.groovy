@@ -32,6 +32,7 @@ class WebFxApplication extends Application {
         SplashScreen.writeMessage('Load configuration ...')
         ConfigManager.config.init(userDirPath, titleMainWindow, mainIcon, mainArguments)
         SplashScreen.writeMessage('Launch application ...')
+
         launch(this, args)
     }
 
